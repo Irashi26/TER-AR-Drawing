@@ -3,6 +3,9 @@ using DilmerGames.Core.Singletons;
 using UnityEngine;
 using UnityEngine.Events;
 using UnityEngine.XR.ARFoundation;
+using System.IO;
+using System.Text;
+using System;
 
 [RequireComponent(typeof(ARAnchorManager))]
 public class ARDrawManager : Singleton<ARDrawManager>
@@ -121,5 +124,43 @@ public class ARDrawManager : Singleton<ARDrawManager>
             LineRenderer line = currentLine.GetComponent<LineRenderer>();
             Destroy(currentLine);
         }
+    }
+
+    // --- NOUVEAU CODE : LE BOUTON TÉLÉCHARGER ---
+    public void DownloadDrawingCSV()
+    {
+        // 1. On prépare une page blanche virtuelle
+        StringBuilder csvText = new StringBuilder();
+        
+        // 2. On écrit l'en-tête du tableau (les colonnes Excel)
+        csvText.AppendLine("Numero_Ligne,Index_Point,X,Y,Z"); 
+
+        // 3. On fouille dans tous les traits dessinés
+        int lineId = 0;
+        foreach (var lineKvp in Lines)
+        {
+            ARLine currentLine = lineKvp.Value;
+            Vector3[] points = currentLine.GetPositions();
+
+            // 4. On écrit les coordonnées de chaque point un par un
+            for (int i = 0; i < points.Length; i++)
+            {
+                csvText.AppendLine($"{lineId},{i},{points[i].x},{points[i].y},{points[i].z}");
+            }
+            lineId++;
+        }
+
+        // 5. On invente un nom de fichier avec la date et l'heure (ex: Dessin_20260413_1530.csv)
+        string timeStamp = DateTime.Now.ToString("yyyyMMdd_HHmmss");
+        
+        // 6. On trouve le dossier secret du téléphone où on a le droit d'écrire
+        string filePath = Path.Combine(Application.persistentDataPath, $"Dessin_{timeStamp}.csv");
+
+        // 7. On sauvegarde !
+        File.WriteAllText(filePath, csvText.ToString());
+        
+        // 8. On affiche un message de réussite sur l'écran !
+        ARDebugManager.Instance.LogInfo($"TELECHARGEMENT OK : {timeStamp}.csv");
+        Debug.Log($"Fichier sauvegardé ici : {filePath}");
     }
 }

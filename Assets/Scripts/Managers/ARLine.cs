@@ -68,5 +68,16 @@ public class ARLine
         LineRenderer = goLineRenderer;
 
         ARDebugManager.Instance.LogInfo($"New line renderer created");
+        
     } 
+    
+    // --- NOUVEAU CODE : Pour l'extraction des données ---
+    public Vector3[] GetPositions()
+        {
+            // On crée un tableau vide de la taille du trait
+            Vector3[] positions = new Vector3[LineRenderer.positionCount];
+            // On demande à l'outil d'Unity de remplir ce tableau avec les points
+            LineRenderer.GetPositions(positions);
+            return positions;
+        }
 }
