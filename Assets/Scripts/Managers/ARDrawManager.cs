@@ -150,11 +150,19 @@ public class ARDrawManager : Singleton<ARDrawManager>
             lineId++;
         }
 
-        // 5. On invente un nom de fichier avec la date et l'heure (ex: Dessin_20260413_1530.csv)
+        // 5. On invente un nom de fichier avec la date et l'heure
         string timeStamp = DateTime.Now.ToString("yyyyMMdd_HHmmss");
-        
-        // 6. On trouve le dossier secret du téléphone où on a le droit d'écrire
-        string filePath = Path.Combine(Application.persistentDataPath, $"Dessin_{timeStamp}.csv");
+        string fileName = $"Dessin_{timeStamp}.csv";
+
+        // 6. On choisit le dossier (Téléchargements sur Android, ou dossier caché sur PC)
+        string folderPath;
+        #if UNITY_ANDROID && !UNITY_EDITOR
+            folderPath = "/storage/emulated/0/Download";
+        #else
+            folderPath = Application.persistentDataPath;
+        #endif
+
+        string filePath = Path.Combine(folderPath, fileName);
 
         // 7. On sauvegarde !
         File.WriteAllText(filePath, csvText.ToString());
