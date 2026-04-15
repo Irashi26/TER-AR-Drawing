@@ -135,17 +135,24 @@ public class ARDrawManager : Singleton<ARDrawManager>
         // 2. On écrit l'en-tête du tableau (les colonnes Excel)
         csvText.AppendLine("Numero_Ligne,Index_Point,X,Y,Z"); 
 
-        // 3. On fouille dans tous les traits dessinés
+        // 3. On récupère TOUS les traits visibles dans la scène 3D
+        GameObject[] allLines = GetAllLinesInScene();
         int lineId = 0;
-        foreach (var lineKvp in Lines)
+        
+        foreach (GameObject currentLineObj in allLines)
         {
-            ARLine currentLine = lineKvp.Value;
-            Vector3[] points = currentLine.GetPositions();
+            // On récupère l'outil qui dessine la ligne
+            LineRenderer lineRenderer = currentLineObj.GetComponent<LineRenderer>();
+            if (lineRenderer == null) continue; // Sécurité au cas où
+
+            // On récupère les points de ce trait
+            Vector3[] points = new Vector3[lineRenderer.positionCount];
+            lineRenderer.GetPositions(points);
 
             // 4. On écrit les coordonnées de chaque point un par un
             for (int i = 0; i < points.Length; i++)
             {
-                csvText.AppendLine($"{lineId},{i},{points[i].x},{points[i].y},{points[i].z}");
+                csvText.AppendLine($"{lineId};{i};{points[i].x};{points[i].y};{points[i].z}");
             }
             lineId++;
         }
