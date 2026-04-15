@@ -6,6 +6,7 @@ using UnityEngine.XR.ARFoundation;
 using System.IO;
 using System.Text;
 using System;
+using UnityEngine.EventSystems; // <-- NOUVEAU : Pour détecter les boutons !
 
 [RequireComponent(typeof(ARAnchorManager))]
 public class ARDrawManager : Singleton<ARDrawManager>
@@ -58,6 +59,9 @@ public class ARDrawManager : Singleton<ARDrawManager>
 
             if(touch.phase == TouchPhase.Began)
             {
+                // <-- BOUCLIER UI : Si on touche un bouton, on annule la création du trait !
+                if (EventSystem.current.IsPointerOverGameObject(touch.fingerId)) return;
+
                 OnDraw?.Invoke();
                 
                 ARAnchor anchor = anchorManager.AddAnchor(new Pose(touchPosition, Quaternion.identity));
@@ -75,11 +79,11 @@ public class ARDrawManager : Singleton<ARDrawManager>
             }
             else if(touch.phase == TouchPhase.Moved || touch.phase == TouchPhase.Stationary)
             {
-                Lines[touch.fingerId].AddPoint(touchPosition);
+                if (Lines.ContainsKey(touch.fingerId)) Lines[touch.fingerId].AddPoint(touchPosition);
             }
             else if(touch.phase == TouchPhase.Ended)
             {
-                Lines.Remove(touch.fingerId);
+                if (Lines.ContainsKey(touch.fingerId)) Lines.Remove(touch.fingerId);
             }
         }
     }
@@ -96,6 +100,9 @@ public class ARDrawManager : Singleton<ARDrawManager>
 
             if(Lines.Keys.Count == 0)
             {
+                // <-- BOUCLIER UI : Si la souris est sur un bouton, on bloque le dessin !
+                if (EventSystem.current.IsPointerOverGameObject()) return;
+                
                 ARLine line = new ARLine(lineSettings);
                 Lines.Add(0, line);
                 line.AddNewLineRenderer(transform, null, mousePosition);
