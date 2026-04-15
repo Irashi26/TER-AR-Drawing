@@ -157,9 +157,23 @@ public class ARDrawManager : Singleton<ARDrawManager>
             lineId++;
         }
 
-        // 5. On invente un nom de fichier avec la date et l'heure
-        string timeStamp = DateTime.Now.ToString("yyyyMMdd_HHmmss");
-        string fileName = $"Dessin_{timeStamp}.csv";
+        // 5. On fabrique le nom du fichier sur mesure !
+        string fileName = "";
+        
+        // On cherche le "Cerveau" dans la scène
+        ExperimentManager expManager = FindObjectOfType<ExperimentManager>();
+
+        if (expManager != null)
+        {
+            // Si le Cerveau est là, on utilise ses données (ex: P1_Ter_Entrainement.csv)
+            fileName = $"{expManager.participantID}_{expManager.groupType}_{expManager.currentPhase}.csv";
+        }
+        else
+        {
+            // Sécurité : si le Cerveau n'est pas là, on remet la date par défaut
+            string timeStamp = DateTime.Now.ToString("yyyyMMdd_HHmmss");
+            fileName = $"Dessin_{timeStamp}.csv";
+        }
 
         // 6. On choisit le dossier (Téléchargements sur Android, ou dossier caché sur PC)
         string folderPath;
@@ -175,7 +189,7 @@ public class ARDrawManager : Singleton<ARDrawManager>
         File.WriteAllText(filePath, csvText.ToString());
         
         // 8. On affiche un message de réussite sur l'écran !
-        ARDebugManager.Instance.LogInfo($"TELECHARGEMENT OK : {timeStamp}.csv");
+        ARDebugManager.Instance.LogInfo($"TELECHARGEMENT OK : {fileName}");
         Debug.Log($"Fichier sauvegardé ici : {filePath}");
     }
 }

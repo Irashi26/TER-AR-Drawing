@@ -9,7 +9,7 @@ public class ExperimentManager : MonoBehaviour
     public GameObject ecran3_Experience;
 
     [Header("Elements 3D / AR")]
-    public GameObject modele3D_Huit; // <-- NOUVEAU : La case pour ton 8 !
+    public GameObject modele3D_Huit; 
 
     [Header("Elements UI")]
     public InputField inputID;
@@ -25,22 +25,23 @@ public class ExperimentManager : MonoBehaviour
         ecran1_ID.SetActive(true);
         ecran2_Groupe.SetActive(false);
         ecran3_Experience.SetActive(false);
-
-        // <-- NOUVEAU : On éteint le 8 au démarrage !
+        
         if (modele3D_Huit != null) modele3D_Huit.SetActive(false);
+
+        // <-- NOUVEAU : On verrouille le pinceau au lancement de l'application !
+        if (ARDrawManager.Instance != null)
+        {
+            ARDrawManager.Instance.AllowDraw(false);
+        }
     }
 
     public void ValiderID()
     {
-        if (inputID.text != "") // Si on a bien tapé quelque chose
+        if (inputID.text != "") 
         {
             participantID = inputID.text;
             ecran1_ID.SetActive(false);   
             ecran2_Groupe.SetActive(true); 
-        }
-        else
-        {
-            Debug.Log("Attention : La case est vide, je bloque !");
         }
     }
 
@@ -60,13 +61,18 @@ public class ExperimentManager : MonoBehaviour
     {
         ecran2_Groupe.SetActive(false);
         ecran3_Experience.SetActive(true);
-
-        // <-- NOUVEAU : On allume le 8 quand l'expérience démarre !
+        
         if (modele3D_Huit != null) modele3D_Huit.SetActive(true);
 
         if (textInfoExperience != null)
         {
             textInfoExperience.text = $"{participantID} - {groupType} - {currentPhase}";
+        }
+
+        // <-- NOUVEAU : L'expérience commence, on déverrouille le pinceau !
+        if (ARDrawManager.Instance != null)
+        {
+            ARDrawManager.Instance.AllowDraw(true);
         }
     }
 }
