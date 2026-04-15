@@ -8,57 +8,62 @@ public class ExperimentManager : MonoBehaviour
     public GameObject ecran2_Groupe;
     public GameObject ecran3_Experience;
 
+    [Header("Elements 3D / AR")]
+    public GameObject modele3D_Huit; // <-- NOUVEAU : La case pour ton 8 !
+
     [Header("Elements UI")]
     public InputField inputID;
-    public Text textInfoExperience; // Le texte en bas à gauche
+    public Text textInfoExperience; 
 
     [Header("Donnees Experience")]
     public string participantID = "Inconnu";
     public string groupType = "Aucun"; 
-    public string currentPhase = "Entrainement"; // La première phase par défaut
+    public string currentPhase = "Entrainement"; 
 
     void Start()
     {
-        // Au lancement, on s'assure que seul l'écran 1 est allumé
         ecran1_ID.SetActive(true);
         ecran2_Groupe.SetActive(false);
         ecran3_Experience.SetActive(false);
+
+        // <-- NOUVEAU : On éteint le 8 au démarrage !
+        if (modele3D_Huit != null) modele3D_Huit.SetActive(false);
     }
 
-    // --- FONCTIONS POUR LES BOUTONS ---
-
-    // 1. Appelée par le bouton "SUIVANT" de l'écran 1
     public void ValiderID()
     {
-        if (inputID.text != "") // Si la case n'est pas vide
+        if (inputID.text != "") // Si on a bien tapé quelque chose
         {
-            participantID = inputID.text; // On sauvegarde le texte tapé
-            ecran1_ID.SetActive(false);   // On éteint l'écran 1
-            ecran2_Groupe.SetActive(true); // On allume l'écran 2
+            participantID = inputID.text;
+            ecran1_ID.SetActive(false);   
+            ecran2_Groupe.SetActive(true); 
+        }
+        else
+        {
+            Debug.Log("Attention : La case est vide, je bloque !");
         }
     }
 
-    // 2. Appelée par le bouton "CONCOMITANT" de l'écran 2
     public void ChoisirGroupeConcomitant()
     {
         groupType = "Co";
         LancerExperience();
     }
 
-    // 3. Appelée par le bouton "TERMINAL" de l'écran 2
     public void ChoisirGroupeTerminal()
     {
         groupType = "Ter";
         LancerExperience();
     }
 
-    // Fonction interne pour passer à l'écran de dessin
     private void LancerExperience()
     {
         ecran2_Groupe.SetActive(false);
         ecran3_Experience.SetActive(true);
 
-        // On met à jour le petit texte en bas à gauche !
+        // <-- NOUVEAU : On allume le 8 quand l'expérience démarre !
+        if (modele3D_Huit != null) modele3D_Huit.SetActive(true);
+
         if (textInfoExperience != null)
         {
             textInfoExperience.text = $"{participantID} - {groupType} - {currentPhase}";
