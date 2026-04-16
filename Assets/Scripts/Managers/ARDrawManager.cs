@@ -124,14 +124,16 @@ public class ARDrawManager : Singleton<ARDrawManager>
     }
 
     public void ClearLines()
+{
+    GameObject[] lines = GetAllLinesInScene();
+    foreach (GameObject currentLine in lines)
     {
-        GameObject[] lines = GetAllLinesInScene();
-        foreach (GameObject currentLine in lines)
-        {
-            LineRenderer line = currentLine.GetComponent<LineRenderer>();
-            Destroy(currentLine);
-        }
+        Destroy(currentLine);
     }
+
+    // <-- LA LIGNE MAGIQUE : On vide la mémoire du script !
+    Lines.Clear(); 
+}
 
     // --- NOUVEAU CODE : LE BOUTON TÉLÉCHARGER ---
     public void DownloadDrawingCSV()
