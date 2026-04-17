@@ -16,6 +16,8 @@ public class ARDrawManager : Singleton<ARDrawManager>
     
     public bool isDrawingVisible = true;
 
+    public float precisionTolerance = 0.02f; // 2 cm de tolérance
+
     // --- NOUVEAU : Variables pour le compteur de fichiers ---
     private int downloadCounter = 1;
     private string lastPhaseStored = "";
@@ -157,18 +159,19 @@ public class ARDrawManager : Singleton<ARDrawManager>
         ExperimentManager expManager = FindObjectOfType<ExperimentManager>();
         if (expManager == null) return;
 
-        // LOGIQUE DE COMPTEUR :
-        // Si la phase a changé depuis le dernier téléchargement, on remet le compteur à 1
         if (expManager.currentPhase != lastPhaseStored)
         {
             downloadCounter = 1;
             lastPhaseStored = expManager.currentPhase;
         }
 
-        StringBuilder csvText = new StringBuilder();
-        csvText.AppendLine("Numero_Ligne,Index_Point,X,Y,Z"); 
+        int totalPoints = 0;
+        int precisePoints = 0;
 
-        GameObject[] allLines = GetAllLinesInScene();
+        StringBuilder csvText = new StringBuilder();
+        csvText.AppendLine("Numero_Ligne;Index_Point;X;Y;Z;Distance_Erreur"); 
+
+        GameObject[] allLines = GameObject.FindGameObjectsWithTag("Line");
         int lineId = 0;
         
         foreach (GameObject currentLineObj in allLines)
@@ -181,28 +184,64 @@ public class ARDrawManager : Singleton<ARDrawManager>
 
             for (int i = 0; i < points.Length; i++)
             {
-                // Note : Utilisation du point-virgule ou virgule selon ton Excel
-                csvText.AppendLine($"{lineId};{i};{points[i].x};{points[i].y};{points[i].z}");
+                // 1. On calcule la distance avec le modèle 3D
+                float dist = GetDistanceToActiveShape(points[i]);
+                
+                // 2. On compte pour le score
+                totalPoints++;
+                if (dist <= precisionTolerance) precisePoints++;
+
+                // 3. On écrit dans le fichier (avec la distance en bonus !)
+                csvText.AppendLine($"{lineId};{i};{points[i].x};{points[i].y};{points[i].z};{dist}");
             }
             lineId++;
         }
 
-        // Création du nom de fichier avec le suffixe du compteur
+        // Calcul du pourcentage final
+        float score = (totalPoints > 0) ? ((float)precisePoints / totalPoints) * 100f : 0f;
+
+        // On crée le contenu final avec le score tout en haut
+        string finalCsvContent = $"SCORE_PRECISION_POURCENT;{score:F2}\n" + csvText.ToString();
+
         string fileName = $"{expManager.participantID}_{expManager.groupType}_{expManager.currentPhase}_{downloadCounter}.csv";
-        
-        // On augmente le compteur pour le PROCHAIN clic dans cette phase
         downloadCounter++;
 
-        string folderPath;
-        #if UNITY_ANDROID && !UNITY_EDITOR
+        string folderPath = Application.persistentDataPath;
+        #if UNITY_EDITOR
+            folderPath = System.Environment.GetFolderPath(System.Environment.SpecialFolder.Desktop);
+        #elif UNITY_ANDROID
             folderPath = "/storage/emulated/0/Download";
-        #else
-            folderPath = Application.persistentDataPath;
         #endif
 
         string filePath = Path.Combine(folderPath, fileName);
-        File.WriteAllText(filePath, csvText.ToString());
+        File.WriteAllText(filePath, finalCsvContent);
         
-        ARDebugManager.Instance.LogInfo($"SAUVEGARDE : {fileName}");
+        Debug.Log($"⭐⭐⭐ SAUVEGARDE RÉUSSIE ! Score : {score:F2}% | Fichier : {filePath} ⭐⭐⭐");
+    }
+
+    // Le "Radar" qui mesure la distance entre le doigt et le modèle 3D
+    private float GetDistanceToActiveShape(Vector3 p) 
+    {
+        ExperimentManager exp = FindObjectOfType<ExperimentManager>();
+        
+        // On cible le modèle Huit en priorité (car c'est là qu'on évalue vraiment)
+        GameObject target = (exp.modeleHuit != null && exp.modeleHuit.activeInHierarchy) ? exp.modeleHuit : null;
+        if (target == null) return 999f; // Si pas de modèle, on met une erreur immense
+
+        float minDist = float.MaxValue;
+        
+        // On cherche le LineRenderer du 8
+        foreach (var lr in target.GetComponentsInChildren<LineRenderer>()) 
+        {
+            Vector3[] nodes = new Vector3[lr.positionCount];
+            lr.GetPositions(nodes);
+            foreach (var node in nodes) 
+            {
+                // TransformPoint convertit la position du 8 dans l'espace réel
+                float d = Vector3.Distance(p, lr.transform.TransformPoint(node));
+                if (d < minDist) minDist = d;
+            }
+        }
+        return minDist;
     }
 }

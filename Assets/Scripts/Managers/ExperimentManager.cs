@@ -14,13 +14,15 @@ public class ExperimentManager : MonoBehaviour
     public GameObject modeleHuit; 
     public GameObject modeleCube; 
 
+    [Header("Boutons Spéciaux")]
+    public GameObject boutonRevealTerminal; 
+    public GameObject boutonRevealTest;     
+
+    // --- ON REMET LES TEXTES ICI ---
     [Header("Textes d'info")]
     public Text textEntrainement; 
     public Text textLearning;
     public Text textTest;
-
-    [Header("Boutons Spéciaux")]
-    public GameObject boutonRevealTerminal; 
 
     [Header("Données")]
     public InputField inputID;
@@ -39,17 +41,19 @@ public class ExperimentManager : MonoBehaviour
         if (modeleHuit != null) modeleHuit.SetActive(false);
         if (modeleCube != null) modeleCube.SetActive(false);
         if (boutonRevealTerminal != null) boutonRevealTerminal.SetActive(false);
+        if (boutonRevealTest != null) boutonRevealTest.SetActive(false);
 
         if (ARDrawManager.Instance != null) ARDrawManager.Instance.AllowDraw(false);
     }
 
-    public void ValiderID()
-    {
-        if (inputID.text != "") {
-            participantID = inputID.text;
-            ecran1_ID.SetActive(false);   
+    public void ValiderID() 
+    { 
+        if (inputID.text != "") { 
+            participantID = inputID.text; 
+            ecran1_ID.SetActive(false); 
             ecran2_Groupe.SetActive(true); 
-        }
+            ActualiserUI(); // Mise à jour
+        } 
     }
 
     public void ChoisirGroupeConcomitant() { groupType = "Co"; LancerEntrainement(); }
@@ -60,14 +64,12 @@ public class ExperimentManager : MonoBehaviour
         currentPhase = "Entrainement";
         ecran2_Groupe.SetActive(false);
         ecran3_Entrainement.SetActive(true);
+        
         if (modeleCube != null) modeleCube.SetActive(true);
         if (modeleHuit != null) modeleHuit.SetActive(false);
         
-        if (ARDrawManager.Instance != null) {
-            ARDrawManager.Instance.SetVisibility(true);
-            ARDrawManager.Instance.AllowDraw(true);
-        }
-        ActualiserUI();
+        AppliquerReglesVisibilite();
+        ActualiserUI(); // Mise à jour
     }
 
     public void PasserALearning()
@@ -75,11 +77,12 @@ public class ExperimentManager : MonoBehaviour
         currentPhase = "Learning";
         ecran3_Entrainement.SetActive(false);
         ecran4_Learning.SetActive(true);
+        
         if (modeleCube != null) modeleCube.SetActive(false);
         if (modeleHuit != null) modeleHuit.SetActive(true);
         
         AppliquerReglesVisibilite();
-        ActualiserUI();
+        ActualiserUI(); // Mise à jour
     }
 
     public void PasserATest()
@@ -87,43 +90,57 @@ public class ExperimentManager : MonoBehaviour
         currentPhase = "Test";
         ecran4_Learning.SetActive(false);
         ecran5_Test.SetActive(true);
-        if (modeleHuit != null) modeleHuit.SetActive(true);
-        if (boutonRevealTerminal != null) boutonRevealTerminal.SetActive(false);
         
-        if (ARDrawManager.Instance != null) ARDrawManager.Instance.SetVisibility(true);
-        ActualiserUI();
+        if (modeleHuit != null) modeleHuit.SetActive(true);
+        
+        AppliquerReglesVisibilite();
+        ActualiserUI(); // Mise à jour
     }
 
-    // --- NOUVELLE FONCTION RESTART TRIAL ---
-    public void RestartEssai()
-    {
-        if (ARDrawManager.Instance != null)
-        {
-            // 1. On efface les traits
-            ARDrawManager.Instance.ClearLines();
-            
-            // 2. On ré-applique les règles de visibilité selon la phase et le groupe
-            AppliquerReglesVisibilite();
-        }
+    public void RestartEssai() 
+    { 
+        if (ARDrawManager.Instance != null) { 
+            ARDrawManager.Instance.ClearLines(); 
+            AppliquerReglesVisibilite(); 
+        } 
     }
 
     private void AppliquerReglesVisibilite()
     {
-        if (currentPhase == "Learning" && groupType == "Ter") 
+        bool isTerminal = (groupType == "Ter");
+
+        if (currentPhase == "Entrainement")
         {
-            if (ARDrawManager.Instance != null) ARDrawManager.Instance.SetVisibility(false);
-            if (boutonRevealTerminal != null) boutonRevealTerminal.SetActive(true);
-        } 
-        else 
-        {
-            if (ARDrawManager.Instance != null) ARDrawManager.Instance.SetVisibility(true);
+            if (ARDrawManager.Instance != null) {
+                ARDrawManager.Instance.AllowDraw(true);
+                ARDrawManager.Instance.SetVisibility(true);
+            }
             if (boutonRevealTerminal != null) boutonRevealTerminal.SetActive(false);
+            if (boutonRevealTest != null) boutonRevealTest.SetActive(false);
+        }
+        else if (currentPhase == "Learning")
+        {
+            if (ARDrawManager.Instance != null) {
+                ARDrawManager.Instance.SetVisibility(!isTerminal);
+            }
+            if (boutonRevealTerminal != null) boutonRevealTerminal.SetActive(isTerminal);
+            if (boutonRevealTest != null) boutonRevealTest.SetActive(false);
+        }
+        else if (currentPhase == "Test")
+        {
+            if (ARDrawManager.Instance != null) {
+                ARDrawManager.Instance.SetVisibility(false);
+            }
+            if (boutonRevealTerminal != null) boutonRevealTerminal.SetActive(false);
+            if (boutonRevealTest != null) boutonRevealTest.SetActive(true);
         }
     }
 
+    // --- NOUVELLE FONCTION POUR METTRE À JOUR LES TEXTES ---
     private void ActualiserUI()
     {
         string message = $"{participantID} - {groupType} - {currentPhase}";
+        
         if (textEntrainement != null) textEntrainement.text = message;
         if (textLearning != null) textLearning.text = message;
         if (textTest != null) textTest.text = message;
