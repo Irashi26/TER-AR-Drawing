@@ -10,49 +10,48 @@ public class ExperimentManager : MonoBehaviour
     public GameObject ecran4_Learning;
     public GameObject ecran5_Test;
 
-    [Header("Elements 3D / AR")]
-    public GameObject modele3D_Huit; 
+    [Header("Modèles 3D")]
+    public GameObject modeleHuit; 
+    public GameObject modeleCube; 
 
-    [Header("Elements UI")]
-    public InputField inputID;
-    
-    // NOUVEAU : On a remplacé l'ancien texte unique par 3 cases !
-    [Header("Textes d'info (Glisse les Text de chaque écran ici)")]
+    [Header("Textes d'info")]
     public Text textEntrainement; 
     public Text textLearning;
     public Text textTest;
 
-    [Header("Donnees Experience")]
+    [Header("Boutons Spéciaux")]
+    public GameObject boutonRevealTerminal; 
+
+    [Header("Données")]
+    public InputField inputID;
     public string participantID = "Inconnu";
     public string groupType = "Aucun"; 
     public string currentPhase = "Entrainement"; 
 
     void Start()
     {
-        // On éteint tout sauf l'écran 1
         ecran1_ID.SetActive(true);
         ecran2_Groupe.SetActive(false);
         ecran3_Entrainement.SetActive(false);
         ecran4_Learning.SetActive(false);
         ecran5_Test.SetActive(false);
         
-        if (modele3D_Huit != null) modele3D_Huit.SetActive(false);
+        if (modeleHuit != null) modeleHuit.SetActive(false);
+        if (modeleCube != null) modeleCube.SetActive(false);
+        if (boutonRevealTerminal != null) boutonRevealTerminal.SetActive(false);
 
         if (ARDrawManager.Instance != null) ARDrawManager.Instance.AllowDraw(false);
     }
 
-    // 1. Ecran ID -> Ecran Groupe
     public void ValiderID()
     {
-        if (inputID.text != "") 
-        {
+        if (inputID.text != "") {
             participantID = inputID.text;
             ecran1_ID.SetActive(false);   
             ecran2_Groupe.SetActive(true); 
         }
     }
 
-    // 2. Ecran Groupe -> Ecran Entrainement
     public void ChoisirGroupeConcomitant() { groupType = "Co"; LancerEntrainement(); }
     public void ChoisirGroupeTerminal() { groupType = "Ter"; LancerEntrainement(); }
 
@@ -61,40 +60,70 @@ public class ExperimentManager : MonoBehaviour
         currentPhase = "Entrainement";
         ecran2_Groupe.SetActive(false);
         ecran3_Entrainement.SetActive(true);
-        DemarrerPhaseCommune();
+        if (modeleCube != null) modeleCube.SetActive(true);
+        if (modeleHuit != null) modeleHuit.SetActive(false);
+        
+        if (ARDrawManager.Instance != null) {
+            ARDrawManager.Instance.SetVisibility(true);
+            ARDrawManager.Instance.AllowDraw(true);
+        }
+        ActualiserUI();
     }
 
-    // 3. Ecran Entrainement -> Ecran Learning
     public void PasserALearning()
     {
         currentPhase = "Learning";
         ecran3_Entrainement.SetActive(false);
         ecran4_Learning.SetActive(true);
+        if (modeleCube != null) modeleCube.SetActive(false);
+        if (modeleHuit != null) modeleHuit.SetActive(true);
+        
+        AppliquerReglesVisibilite();
         ActualiserUI();
     }
 
-    // 4. Ecran Learning -> Ecran Test
     public void PasserATest()
     {
         currentPhase = "Test";
         ecran4_Learning.SetActive(false);
         ecran5_Test.SetActive(true);
+        if (modeleHuit != null) modeleHuit.SetActive(true);
+        if (boutonRevealTerminal != null) boutonRevealTerminal.SetActive(false);
+        
+        if (ARDrawManager.Instance != null) ARDrawManager.Instance.SetVisibility(true);
         ActualiserUI();
     }
 
-    // Fonctions utilitaires
-    private void DemarrerPhaseCommune()
+    // --- NOUVELLE FONCTION RESTART TRIAL ---
+    public void RestartEssai()
     {
-        if (modele3D_Huit != null) modele3D_Huit.SetActive(true);
-        if (ARDrawManager.Instance != null) ARDrawManager.Instance.AllowDraw(true);
-        ActualiserUI();
+        if (ARDrawManager.Instance != null)
+        {
+            // 1. On efface les traits
+            ARDrawManager.Instance.ClearLines();
+            
+            // 2. On ré-applique les règles de visibilité selon la phase et le groupe
+            AppliquerReglesVisibilite();
+        }
     }
 
-    // NOUVEAU : La fonction qui met à jour les 3 écrans d'un coup
+    private void AppliquerReglesVisibilite()
+    {
+        if (currentPhase == "Learning" && groupType == "Ter") 
+        {
+            if (ARDrawManager.Instance != null) ARDrawManager.Instance.SetVisibility(false);
+            if (boutonRevealTerminal != null) boutonRevealTerminal.SetActive(true);
+        } 
+        else 
+        {
+            if (ARDrawManager.Instance != null) ARDrawManager.Instance.SetVisibility(true);
+            if (boutonRevealTerminal != null) boutonRevealTerminal.SetActive(false);
+        }
+    }
+
     private void ActualiserUI()
     {
         string message = $"{participantID} - {groupType} - {currentPhase}";
-
         if (textEntrainement != null) textEntrainement.text = message;
         if (textLearning != null) textLearning.text = message;
         if (textTest != null) textTest.text = message;

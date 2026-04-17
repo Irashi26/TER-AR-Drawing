@@ -6,13 +6,19 @@ using UnityEngine.XR.ARFoundation;
 using System.IO;
 using System.Text;
 using System;
-using UnityEngine.EventSystems; // <-- NOUVEAU : Pour détecter les boutons !
+using UnityEngine.EventSystems;
 
 [RequireComponent(typeof(ARAnchorManager))]
 public class ARDrawManager : Singleton<ARDrawManager>
 {
     [SerializeField]
     private LineSettings lineSettings = null;
+    
+    public bool isDrawingVisible = true;
+
+    // --- NOUVEAU : Variables pour le compteur de fichiers ---
+    private int downloadCounter = 1;
+    private string lastPhaseStored = "";
 
     [SerializeField]
     private UnityEvent OnDraw = null;
@@ -36,13 +42,12 @@ public class ARDrawManager : Singleton<ARDrawManager>
         #else
         DrawOnMouse();
         #endif
-	}
+    }
 
     public void AllowDraw(bool isAllow)
     {
         CanDraw = isAllow;
     }
-
 
     void DrawOnTouch()
     {
@@ -55,27 +60,20 @@ public class ARDrawManager : Singleton<ARDrawManager>
             Touch touch = Input.GetTouch(i);
             Vector3 touchPosition = arCamera.ScreenToWorldPoint(new Vector3(Input.GetTouch(i).position.x, Input.GetTouch(i).position.y, lineSettings.distanceFromCamera));
             
-            ARDebugManager.Instance.LogInfo($"{touch.fingerId}");
-
             if(touch.phase == TouchPhase.Began)
             {
-                // <-- BOUCLIER UI : Si on touche un bouton, on annule la création du trait !
                 if (EventSystem.current.IsPointerOverGameObject(touch.fingerId)) return;
 
                 OnDraw?.Invoke();
                 
                 ARAnchor anchor = anchorManager.AddAnchor(new Pose(touchPosition, Quaternion.identity));
-                if (anchor == null) 
-                    Debug.LogError("Error creating reference point");
-                else 
-                {
-                    anchors.Add(anchor);
-                    ARDebugManager.Instance.LogInfo($"Anchor created & total of {anchors.Count} anchor(s)");
-                }
+                if (anchor != null) anchors.Add(anchor);
 
                 ARLine line = new ARLine(lineSettings);
                 Lines.Add(touch.fingerId, line);
                 line.AddNewLineRenderer(transform, anchor, touchPosition);
+                
+                ApplyCurrentVisibility();
             }
             else if(touch.phase == TouchPhase.Moved || touch.phase == TouchPhase.Stationary)
             {
@@ -96,16 +94,15 @@ public class ARDrawManager : Singleton<ARDrawManager>
 
         if(Input.GetMouseButton(0))
         {
-            OnDraw?.Invoke();
-
             if(Lines.Keys.Count == 0)
             {
-                // <-- BOUCLIER UI : Si la souris est sur un bouton, on bloque le dessin !
                 if (EventSystem.current.IsPointerOverGameObject()) return;
                 
+                OnDraw?.Invoke();
                 ARLine line = new ARLine(lineSettings);
                 Lines.Add(0, line);
                 line.AddNewLineRenderer(transform, null, mousePosition);
+                ApplyCurrentVisibility();
             }
             else 
             {
@@ -124,67 +121,78 @@ public class ARDrawManager : Singleton<ARDrawManager>
     }
 
     public void ClearLines()
-{
-    GameObject[] lines = GetAllLinesInScene();
-    foreach (GameObject currentLine in lines)
     {
-        Destroy(currentLine);
+        GameObject[] lines = GetAllLinesInScene();
+        foreach (GameObject currentLine in lines) { Destroy(currentLine); }
+        Lines.Clear(); 
     }
 
-    // <-- LA LIGNE MAGIQUE : On vide la mémoire du script !
-    Lines.Clear(); 
-}
+    public void SetVisibility(bool visible)
+    {
+        isDrawingVisible = visible;
+        ApplyCurrentVisibility();
+    }
 
-    // --- NOUVEAU CODE : LE BOUTON TÉLÉCHARGER ---
+    public void RevealLines()
+    {
+        isDrawingVisible = true;
+        ApplyCurrentVisibility();
+    }
+
+    private void ApplyCurrentVisibility()
+    {
+        GameObject[] lines = GetAllLinesInScene();
+        foreach (GameObject currentLine in lines)
+        {
+            LineRenderer lr = currentLine.GetComponent<LineRenderer>();
+            if (lr != null) lr.enabled = isDrawingVisible;
+        }
+    }
+
+    // ==========================================
+    // --- FONCTION DE TELECHARGEMENT AMÉLIORÉE ---
+    // ==========================================
     public void DownloadDrawingCSV()
     {
-        // 1. On prépare une page blanche virtuelle
+        ExperimentManager expManager = FindObjectOfType<ExperimentManager>();
+        if (expManager == null) return;
+
+        // LOGIQUE DE COMPTEUR :
+        // Si la phase a changé depuis le dernier téléchargement, on remet le compteur à 1
+        if (expManager.currentPhase != lastPhaseStored)
+        {
+            downloadCounter = 1;
+            lastPhaseStored = expManager.currentPhase;
+        }
+
         StringBuilder csvText = new StringBuilder();
-        
-        // 2. On écrit l'en-tête du tableau (les colonnes Excel)
         csvText.AppendLine("Numero_Ligne,Index_Point,X,Y,Z"); 
 
-        // 3. On récupère TOUS les traits visibles dans la scène 3D
         GameObject[] allLines = GetAllLinesInScene();
         int lineId = 0;
         
         foreach (GameObject currentLineObj in allLines)
         {
-            // On récupère l'outil qui dessine la ligne
             LineRenderer lineRenderer = currentLineObj.GetComponent<LineRenderer>();
-            if (lineRenderer == null) continue; // Sécurité au cas où
+            if (lineRenderer == null) continue; 
 
-            // On récupère les points de ce trait
             Vector3[] points = new Vector3[lineRenderer.positionCount];
             lineRenderer.GetPositions(points);
 
-            // 4. On écrit les coordonnées de chaque point un par un
             for (int i = 0; i < points.Length; i++)
             {
+                // Note : Utilisation du point-virgule ou virgule selon ton Excel
                 csvText.AppendLine($"{lineId};{i};{points[i].x};{points[i].y};{points[i].z}");
             }
             lineId++;
         }
 
-        // 5. On fabrique le nom du fichier sur mesure !
-        string fileName = "";
+        // Création du nom de fichier avec le suffixe du compteur
+        string fileName = $"{expManager.participantID}_{expManager.groupType}_{expManager.currentPhase}_{downloadCounter}.csv";
         
-        // On cherche le "Cerveau" dans la scène
-        ExperimentManager expManager = FindObjectOfType<ExperimentManager>();
+        // On augmente le compteur pour le PROCHAIN clic dans cette phase
+        downloadCounter++;
 
-        if (expManager != null)
-        {
-            // Si le Cerveau est là, on utilise ses données (ex: P1_Ter_Entrainement.csv)
-            fileName = $"{expManager.participantID}_{expManager.groupType}_{expManager.currentPhase}.csv";
-        }
-        else
-        {
-            // Sécurité : si le Cerveau n'est pas là, on remet la date par défaut
-            string timeStamp = DateTime.Now.ToString("yyyyMMdd_HHmmss");
-            fileName = $"Dessin_{timeStamp}.csv";
-        }
-
-        // 6. On choisit le dossier (Téléchargements sur Android, ou dossier caché sur PC)
         string folderPath;
         #if UNITY_ANDROID && !UNITY_EDITOR
             folderPath = "/storage/emulated/0/Download";
@@ -193,12 +201,8 @@ public class ARDrawManager : Singleton<ARDrawManager>
         #endif
 
         string filePath = Path.Combine(folderPath, fileName);
-
-        // 7. On sauvegarde !
         File.WriteAllText(filePath, csvText.ToString());
         
-        // 8. On affiche un message de réussite sur l'écran !
-        ARDebugManager.Instance.LogInfo($"TELECHARGEMENT OK : {fileName}");
-        Debug.Log($"Fichier sauvegardé ici : {filePath}");
+        ARDebugManager.Instance.LogInfo($"SAUVEGARDE : {fileName}");
     }
 }
