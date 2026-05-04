@@ -11,33 +11,35 @@ using UnityEngine.EventSystems;
 [RequireComponent(typeof(ARAnchorManager))]
 public class ARDrawManager : Singleton<ARDrawManager>
 {
-    [SerializeField]
-    private LineSettings lineSettings = null;
+    [SerializeField] private LineSettings lineSettings = null;
     
     public bool isDrawingVisible = true;
 
-    public float precisionTolerance = 0.02f; // 2 cm de tolérance
+    [Header("Feedback Visuel (Couleurs)")]
+    public float distVerte = 0.02f; // De 0 à 2cm : Vert vers Jaune
+    public float distRouge = 0.05f; // De 2cm à 5cm : Jaune vers Rouge
 
-    // --- NOUVEAU : Variables pour le compteur de fichiers ---
+    [Header("Références AR")]
+    [SerializeField] private UnityEvent OnDraw = null;
+    [SerializeField] private ARAnchorManager anchorManager = null;
+    [SerializeField] private Camera arCamera = null;
+
+    // --- Variables pour le CSV et le Temps ---
     private int downloadCounter = 1;
     private string lastPhaseStored = "";
+    private float currentLineStartTime;
+    private List<float> lineDurations = new List<float>();
 
-    [SerializeField]
-    private UnityEvent OnDraw = null;
+    // --- Variables pour la téléportation ---
+    private Vector3 positionInitialeHuit;
+    private bool positionHuitSauvegardee = false;
 
-    [SerializeField]
-    private ARAnchorManager anchorManager = null;
-
-    [SerializeField] 
-    private Camera arCamera = null;
-
-    private List<ARAnchor> anchors = new List<ARAnchor>();
-
-    private Dictionary<int, ARLine> Lines = new Dictionary<int, ARLine>();
-
+    // --- Système de mini-segments ---
+    private Dictionary<int, GameObject> activeTraces = new Dictionary<int, GameObject>();
+    private Dictionary<int, Vector3> lastPointPositions = new Dictionary<int, Vector3>();
     private bool CanDraw { get; set; }
 
-    void Update ()
+    void Update()
     {
         #if !UNITY_EDITOR    
         DrawOnTouch();
@@ -46,10 +48,7 @@ public class ARDrawManager : Singleton<ARDrawManager>
         #endif
     }
 
-    public void AllowDraw(bool isAllow)
-    {
-        CanDraw = isAllow;
-    }
+    public void AllowDraw(bool isAllow) { CanDraw = isAllow; }
 
     void DrawOnTouch()
     {
@@ -65,25 +64,21 @@ public class ARDrawManager : Singleton<ARDrawManager>
             if(touch.phase == TouchPhase.Began)
             {
                 if (EventSystem.current.IsPointerOverGameObject(touch.fingerId)) return;
-
-                OnDraw?.Invoke();
-                
-                ARAnchor anchor = anchorManager.AddAnchor(new Pose(touchPosition, Quaternion.identity));
-                if (anchor != null) anchors.Add(anchor);
-
-                ARLine line = new ARLine(lineSettings);
-                Lines.Add(touch.fingerId, line);
-                line.AddNewLineRenderer(transform, anchor, touchPosition);
-                
-                ApplyCurrentVisibility();
+                StartNewTrace(touch.fingerId, touchPosition);
             }
             else if(touch.phase == TouchPhase.Moved || touch.phase == TouchPhase.Stationary)
             {
-                if (Lines.ContainsKey(touch.fingerId)) Lines[touch.fingerId].AddPoint(touchPosition);
+                if (activeTraces.ContainsKey(touch.fingerId))
+                {
+                    if (Vector3.Distance(lastPointPositions[touch.fingerId], touchPosition) > lineSettings.minDistanceBeforeNewPoint)
+                    {
+                        AddSegmentToTrace(touch.fingerId, touchPosition);
+                    }
+                }
             }
             else if(touch.phase == TouchPhase.Ended)
             {
-                if (Lines.ContainsKey(touch.fingerId)) Lines.Remove(touch.fingerId);
+                if (activeTraces.ContainsKey(touch.fingerId)) EndTrace(touch.fingerId);
             }
         }
     }
@@ -94,40 +89,132 @@ public class ARDrawManager : Singleton<ARDrawManager>
 
         Vector3 mousePosition = arCamera.ScreenToWorldPoint(new Vector3(Input.mousePosition.x, Input.mousePosition.y, lineSettings.distanceFromCamera));
 
-        if(Input.GetMouseButton(0))
+        if(Input.GetMouseButtonDown(0))
         {
-            if(Lines.Keys.Count == 0)
+            if (EventSystem.current.IsPointerOverGameObject()) return;
+            StartNewTrace(0, mousePosition);
+        }
+        else if(Input.GetMouseButton(0))
+        {
+            if (activeTraces.ContainsKey(0))
             {
-                if (EventSystem.current.IsPointerOverGameObject()) return;
-                
-                OnDraw?.Invoke();
-                ARLine line = new ARLine(lineSettings);
-                Lines.Add(0, line);
-                line.AddNewLineRenderer(transform, null, mousePosition);
-                ApplyCurrentVisibility();
-            }
-            else 
-            {
-                Lines[0].AddPoint(mousePosition);
+                if (Vector3.Distance(lastPointPositions[0], mousePosition) > lineSettings.minDistanceBeforeNewPoint)
+                {
+                    AddSegmentToTrace(0, mousePosition);
+                }
             }
         }
         else if(Input.GetMouseButtonUp(0))
         {
-            Lines.Remove(0);   
+            if (activeTraces.ContainsKey(0)) EndTrace(0);
         }
     }
 
-    GameObject[] GetAllLinesInScene()
+    // ==========================================
+    // --- LOGIQUE DES MINI-SEGMENTS COLORÉS ---
+    // ==========================================
+
+    private void StartNewTrace(int pointerId, Vector3 startPos)
     {
-        return GameObject.FindGameObjectsWithTag("Line");
+        OnDraw?.Invoke();
+        currentLineStartTime = Time.time;
+
+        // --- MAGIE DU TEST AVEUGLE (Téléportation et Disparition) ---
+        ExperimentManager exp = FindObjectOfType<ExperimentManager>();
+        if (exp != null && exp.currentPhase == "TestAveugle")
+        {
+            if (exp.modeleHuit != null && exp.sphereDepart != null)
+            {
+                // Sauvegarde de la position du 8 la première fois
+                if (!positionHuitSauvegardee)
+                {
+                    positionInitialeHuit = exp.modeleHuit.transform.position;
+                    positionHuitSauvegardee = true;
+                }
+
+                // 1. Calcul du décalage exact entre le doigt et la bille rouge
+                Vector3 decalage = startPos - exp.sphereDepart.transform.position;
+                
+                // 2. Téléportation discrète de tout le 8
+                exp.modeleHuit.transform.position += decalage;
+                
+                // 3. Disparition visuelle (le LineRenderer s'éteint, mais l'objet reste pour calculer l'erreur)
+                LineRenderer lrHuit = exp.modeleHuit.GetComponent<LineRenderer>();
+                if (lrHuit != null) lrHuit.enabled = false;
+                
+                // 4. Disparition de la bille
+                exp.sphereDepart.SetActive(false); 
+            }
+        }
+        // -------------------------------------------------------------
+
+        // Création du parent qui va contenir tous les segments
+        GameObject traceParent = new GameObject("Trace_" + DateTime.Now.Ticks);
+        traceParent.tag = "Line";
+        traceParent.transform.SetParent(transform);
+
+        // --- CORRECTION : SÉCURITÉ POUR LE TEST SUR PC ---
+        if (anchorManager != null && anchorManager.subsystem != null && anchorManager.subsystem.running)
+        {
+            ARAnchor anchor = anchorManager.AddAnchor(new Pose(startPos, Quaternion.identity));
+            if (anchor != null) traceParent.transform.SetParent(anchor.transform);
+        }
+
+        activeTraces.Add(pointerId, traceParent);
+        lastPointPositions.Add(pointerId, startPos);
     }
 
-    public void ClearLines()
+    private void AddSegmentToTrace(int pointerId, Vector3 endPos)
     {
-        GameObject[] lines = GetAllLinesInScene();
-        foreach (GameObject currentLine in lines) { Destroy(currentLine); }
-        Lines.Clear(); 
+        Vector3 startPos = lastPointPositions[pointerId];
+        GameObject traceParent = activeTraces[pointerId];
+
+        // 1. Calcul de la distance au modèle
+        float distance = GetDistanceToActiveShape(endPos);
+        
+        // 2. Détermination du dégradé de couleur
+        Color segmentColor = GetColorFromDistance(distance);
+
+        // 3. Création visuelle du segment
+        GameObject segObj = new GameObject("Segment");
+        segObj.transform.SetParent(traceParent.transform);
+        
+        LineRenderer lr = segObj.AddComponent<LineRenderer>();
+        // Matériel spécial pour les couleurs brutes qui "pètent" bien
+        lr.material = new Material(Shader.Find("Sprites/Default")); 
+        lr.startColor = lr.endColor = segmentColor;
+        lr.startWidth = lr.endWidth = lineSettings.startWidth; // Épaisseur fine
+        lr.positionCount = 2;
+        lr.SetPosition(0, startPos);
+        lr.SetPosition(1, endPos);
+        lr.useWorldSpace = true;
+        
+        // 4. On applique la règle d'invisibilité (Le terminal ne verra rien jusqu'au bouton "Voir")
+        lr.enabled = isDrawingVisible;
+
+        lastPointPositions[pointerId] = endPos;
     }
+
+    private void EndTrace(int pointerId)
+    {
+        activeTraces.Remove(pointerId);
+        lastPointPositions.Remove(pointerId);
+        lineDurations.Add(Time.time - currentLineStartTime);
+    }
+
+    private Color GetColorFromDistance(float d)
+    {
+        // De 0 à 2 cm : Transition Vert -> Jaune
+        if (d <= distVerte) return Color.Lerp(Color.green, Color.yellow, d / distVerte);
+        // De 2 cm à 5 cm : Transition Jaune -> Rouge
+        if (d <= distRouge) return Color.Lerp(Color.yellow, Color.red, (d - distVerte) / (distRouge - distVerte));
+        // Plus de 5 cm : Rouge
+        return Color.red;
+    }
+
+    // ==========================================
+    // --- GESTION DE LA VISIBILITÉ ---
+    // ==========================================
 
     public void SetVisibility(bool visible)
     {
@@ -139,21 +226,58 @@ public class ARDrawManager : Singleton<ARDrawManager>
     {
         isDrawingVisible = true;
         ApplyCurrentVisibility();
+
+        // NOUVEAU : Réafficher le 8 si on était en test aveugle
+        ExperimentManager exp = FindObjectOfType<ExperimentManager>();
+        if (exp != null && exp.modeleHuit != null)
+        {
+            LineRenderer lrHuit = exp.modeleHuit.GetComponent<LineRenderer>();
+            if (lrHuit != null) lrHuit.enabled = true; // On rallume le 8 pour la comparaison
+        }
     }
 
     private void ApplyCurrentVisibility()
     {
-        GameObject[] lines = GetAllLinesInScene();
-        foreach (GameObject currentLine in lines)
+        foreach (GameObject trace in GameObject.FindGameObjectsWithTag("Line"))
         {
-            LineRenderer lr = currentLine.GetComponent<LineRenderer>();
-            if (lr != null) lr.enabled = isDrawingVisible;
+            foreach (LineRenderer lr in trace.GetComponentsInChildren<LineRenderer>())
+            {
+                lr.enabled = isDrawingVisible;
+            }
+        }
+    }
+
+    public void ClearLines()
+    {
+        foreach (GameObject trace in GameObject.FindGameObjectsWithTag("Line")) Destroy(trace);
+        activeTraces.Clear();
+        lastPointPositions.Clear();
+        lineDurations.Clear(); 
+
+        // NOUVEAU : Gérer le reset du test aveugle
+        ExperimentManager exp = FindObjectOfType<ExperimentManager>();
+        if (exp != null && exp.modeleHuit != null)
+        {
+            LineRenderer lrHuit = exp.modeleHuit.GetComponent<LineRenderer>();
+            if (lrHuit != null) lrHuit.enabled = true; // On s'assure que le 8 est visible
+            
+            if (exp.currentPhase == "TestAveugle") 
+            {
+                if (exp.sphereDepart != null) exp.sphereDepart.SetActive(true);
+                
+                // On remet le 8 à sa position d'origine pour ne pas fausser le prochain essai
+                if (positionHuitSauvegardee)
+                {
+                    exp.modeleHuit.transform.position = positionInitialeHuit;
+                }
+            }
         }
     }
 
     // ==========================================
-    // --- FONCTION DE TELECHARGEMENT AMÉLIORÉE ---
+    // --- L'EXPORT CSV PARFAIT ---
     // ==========================================
+
     public void DownloadDrawingCSV()
     {
         ExperimentManager expManager = FindObjectOfType<ExperimentManager>();
@@ -166,42 +290,53 @@ public class ARDrawManager : Singleton<ARDrawManager>
         }
 
         int totalPoints = 0;
-        int precisePoints = 0;
+        int greenPoints = 0;  // Pour le score strict
+        int yellowPoints = 0; // Pour le score partiel
 
         StringBuilder csvText = new StringBuilder();
-        csvText.AppendLine("Numero_Ligne;Index_Point;X;Y;Z;Distance_Erreur"); 
+        csvText.AppendLine("Numero_Ligne;Duree_Trait_Sec;Index_Point;X;Y;Z;Distance_Erreur"); 
 
-        GameObject[] allLines = GameObject.FindGameObjectsWithTag("Line");
-        int lineId = 0;
-        
-        foreach (GameObject currentLineObj in allLines)
+        GameObject[] allTraces = GameObject.FindGameObjectsWithTag("Line");
+        System.Array.Sort(allTraces, (a, b) => a.transform.GetSiblingIndex().CompareTo(b.transform.GetSiblingIndex()));
+
+        for (int lineId = 0; lineId < allTraces.Length; lineId++)
         {
-            LineRenderer lineRenderer = currentLineObj.GetComponent<LineRenderer>();
-            if (lineRenderer == null) continue; 
+            float duration = (lineId < lineDurations.Count) ? lineDurations[lineId] : 0f;
+            LineRenderer[] segments = allTraces[lineId].GetComponentsInChildren<LineRenderer>();
+            if (segments.Length == 0) continue;
 
-            Vector3[] points = new Vector3[lineRenderer.positionCount];
-            lineRenderer.GetPositions(points);
+            List<Vector3> points = new List<Vector3>();
+            points.Add(segments[0].GetPosition(0)); 
+            for (int s = 0; s < segments.Length; s++) points.Add(segments[s].GetPosition(1));
 
-            for (int i = 0; i < points.Length; i++)
+            for (int i = 0; i < points.Count; i++)
             {
-                // 1. On calcule la distance avec le modèle 3D
                 float dist = GetDistanceToActiveShape(points[i]);
-                
-                // 2. On compte pour le score
                 totalPoints++;
-                if (dist <= precisionTolerance) precisePoints++;
 
-                // 3. On écrit dans le fichier (avec la distance en bonus !)
-                csvText.AppendLine($"{lineId};{i};{points[i].x};{points[i].y};{points[i].z};{dist}");
+                // LOGIQUE DES SCORES
+                if (dist <= distVerte) 
+                {
+                    greenPoints++; // Zone Verte
+                }
+                else if (dist <= distRouge) 
+                {
+                    yellowPoints++; // Zone Jaune
+                }
+
+                csvText.AppendLine($"{lineId};{duration:F3};{i};{points[i].x};{points[i].y};{points[i].z};{dist:F4}");
             }
-            lineId++;
         }
 
-        // Calcul du pourcentage final
-        float score = (totalPoints > 0) ? ((float)precisePoints / totalPoints) * 100f : 0f;
+        // --- CALCULS DES DEUX SCORES ---
+        float scoreStrict = (totalPoints > 0) ? ((float)greenPoints / totalPoints) * 100f : 0f;
+        float pointsPonderes = (float)greenPoints + (yellowPoints * 0.5f);
+        float scorePartiel = (totalPoints > 0) ? (pointsPonderes / totalPoints) * 100f : 0f;
 
-        // On crée le contenu final avec le score tout en haut
-        string finalCsvContent = $"SCORE_PRECISION_POURCENT;{score:F2}\n" + csvText.ToString();
+        // --- GÉNÉRATION DU CONTENU DU FICHIER ---
+        string finalCsvContent = $"SCORE_PRECISION_STRICT;{scoreStrict:F2}\n" + 
+                                 $"SCORE_PERFORMANCE_PARTIEL;{scorePartiel:F2}\n" + 
+                                 csvText.ToString();
 
         string fileName = $"{expManager.participantID}_{expManager.groupType}_{expManager.currentPhase}_{downloadCounter}.csv";
         downloadCounter++;
@@ -216,32 +351,46 @@ public class ARDrawManager : Singleton<ARDrawManager>
         string filePath = Path.Combine(folderPath, fileName);
         File.WriteAllText(filePath, finalCsvContent);
         
-        Debug.Log($"⭐⭐⭐ SAUVEGARDE RÉUSSIE ! Score : {score:F2}% | Fichier : {filePath} ⭐⭐⭐");
+        Debug.Log($"⭐⭐⭐ SCORES : Strict={scoreStrict:F2}% | Partiel={scorePartiel:F2}% ⭐⭐⭐");
     }
 
-    // Le "Radar" qui mesure la distance entre le doigt et le modèle 3D
     private float GetDistanceToActiveShape(Vector3 p) 
     {
         ExperimentManager exp = FindObjectOfType<ExperimentManager>();
         
-        // On cible le modèle Huit en priorité (car c'est là qu'on évalue vraiment)
         GameObject target = (exp.modeleHuit != null && exp.modeleHuit.activeInHierarchy) ? exp.modeleHuit : null;
-        if (target == null) return 999f; // Si pas de modèle, on met une erreur immense
+        if (target == null) return 999f; 
 
         float minDist = float.MaxValue;
         
-        // On cherche le LineRenderer du 8
         foreach (var lr in target.GetComponentsInChildren<LineRenderer>()) 
         {
             Vector3[] nodes = new Vector3[lr.positionCount];
             lr.GetPositions(nodes);
-            foreach (var node in nodes) 
+            
+            // On vérifie la distance par rapport à chaque SEGMENT de la ligne (Haute Précision)
+            for (int i = 0; i < nodes.Length - 1; i++) 
             {
-                // TransformPoint convertit la position du 8 dans l'espace réel
-                float d = Vector3.Distance(p, lr.transform.TransformPoint(node));
+                Vector3 a = lr.transform.TransformPoint(nodes[i]);
+                Vector3 b = lr.transform.TransformPoint(nodes[i+1]);
+                
+                float d = DistancePointToSegment(p, a, b);
                 if (d < minDist) minDist = d;
             }
         }
         return minDist;
+    }
+
+    // Fonction mathématique pour calculer la distance entre le doigt et un bout de ligne
+    private float DistancePointToSegment(Vector3 point, Vector3 start, Vector3 end)
+    {
+        Vector3 lineDirection = end - start;
+        Vector3 pointToStart = point - start;
+        
+        float t = Vector3.Dot(pointToStart, lineDirection) / lineDirection.sqrMagnitude;
+        t = Mathf.Clamp01(t); // Force le point à rester sur le segment
+        
+        Vector3 closestPoint = start + t * lineDirection;
+        return Vector3.Distance(point, closestPoint);
     }
 }

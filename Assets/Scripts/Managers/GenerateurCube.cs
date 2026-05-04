@@ -3,11 +3,11 @@
 public class GenerateurCube : MonoBehaviour
 {
     [Header("Dimensions du Cube")]
-    public float taille = 0.5f;      // Augmenté à 50cm pour mieux voir sur PC
-    public float epaisseur = 0.01f;  // 1cm d'épaisseur
+    public float taille = 0.5f;      
+    public float epaisseur = 0.01f;  
 
     [Header("Apparence")]
-    public Color couleurArete = Color.cyan; // Une belle couleur turquoise/bleue
+    public Material materiauArete; // <-- C'EST ÇA QUI CHANGE TOUT
 
     void Start()
     {
@@ -16,7 +16,6 @@ public class GenerateurCube : MonoBehaviour
 
     public void ConstruireCube()
     {
-        // On nettoie si on l'appelle plusieurs fois
         foreach (Transform child in transform) Destroy(child.gameObject);
 
         float d = taille / 2f;
@@ -31,34 +30,26 @@ public class GenerateurCube : MonoBehaviour
             {0,1}, {1,2}, {2,3}, {3,0}, {4,5}, {5,6}, {6,7}, {7,4}, {0,4}, {1,5}, {2,6}, {3,7}
         };
 
-        // Création d'un matériau simple pour la couleur
-        Material materialCouleur = new Material(Shader.Find("Unlit/Color"));
-        materialCouleur.color = couleurArete;
-
         for (int i = 0; i < 12; i++)
         {
-            CreerArete(sommets[aretes[i, 0]], sommets[aretes[i, 1]], i, materialCouleur);
+            CreerArete(sommets[aretes[i, 0]], sommets[aretes[i, 1]], i);
         }
     }
 
-    void CreerArete(Vector3 start, Vector3 end, int index, Material mat)
+    void CreerArete(Vector3 start, Vector3 end, int index)
     {
         GameObject baton = GameObject.CreatePrimitive(PrimitiveType.Cylinder);
         baton.name = "Arete_" + index;
         baton.transform.SetParent(transform, false);
 
-        // Position et Rotation
         baton.transform.localPosition = (start + end) / 2f;
         baton.transform.up = end - start;
-
-        // Mise à l'échelle (Le cylindre Unity fait 2m de haut par défaut, d'où le /2)
         float dist = Vector3.Distance(start, end);
         baton.transform.localScale = new Vector3(epaisseur, dist / 2f, epaisseur);
 
-        // Application du matériau
-        baton.GetComponent<Renderer>().material = mat;
+        // On applique ton vrai matériau
+        if (materiauArete != null) baton.GetComponent<Renderer>().material = materiauArete;
 
-        // Supprimer le collider pour ne pas gêner le dessin
         Destroy(baton.GetComponent<Collider>());
     }
 }
